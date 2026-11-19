@@ -18,6 +18,7 @@ const fresh = () => ({
   habits:[],
   goals:[],
   notes:[],
+  journal:[],
   tasks:[],
   shopping:[],
   expenses:[],
@@ -402,6 +403,58 @@ function lists(){
   </div>`;
 }
 
+/* JOURNAL */
+
+function journal(){
+  const entries=[...(data.journal||[])].sort((a,b)=>
+    (b.date||'').localeCompare(a.date||'')
+  );
+
+  const prompts=[
+    'What felt meaningful today?',
+    'What is something I wish someone understood?',
+    'What am I proud of, even if it feels small?',
+    'What do I need more of tomorrow?',
+    'What am I ready to let go of?'
+  ];
+
+  return head(
+    'A SPACE JUST FOR YOU',
+    'Your journal ✎',
+    'A quiet place to untangle thoughts, notice feelings, and be yourself.',
+    addBtn('journal','＋ Write an entry')
+  )+
+  `<div class="grid two-col">
+    ${card('A gentle reflection',`
+      <div class="notice">
+        You don't have to make every entry meaningful or polished. You can write a sentence, a page, or simply how today felt. This space is yours. ✨
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label>A prompt if you need one</label>
+        <div class="muted">${prompts.map(p=>'<p>✦ '+esc(p)+'</p>').join('')}</div>
+      </div>
+      ${addBtn('journal','＋ Start writing')}
+    `)}
+    ${card('Your journal at a glance',`
+      <div class="stat-value">${entries.length}</div>
+      <div class="stat-foot">${entries.length===1?'entry':'entries'} saved in your journal</div>
+      <p class="muted" style="margin-top:12px">${entries.length?'Your thoughts are here whenever you want to revisit them.':'Your first entry is waiting whenever you're ready.'}</p>
+    `)}
+  </div>
+  <div style="margin-top:18px">
+    ${card('Past entries',
+      entries.length
+        ? entries.map(j=>`<article class="journal-entry" style="padding:14px 0;border-bottom:1px solid var(--line)">
+            <div class="eyebrow">${esc(j.date?pretty(j.date):'Undated entry')}</div>
+            <h3 style="margin:6px 0">${esc(j.title||'Untitled entry')}</h3>
+            <div class="muted" style="font-size:12px;margin-bottom:9px">${esc(j.mood||'Mood not added')}${j.prompt?' · '+esc(j.prompt):''}</div>
+            <div style="white-space:pre-wrap;line-height:1.65">${esc(j.body||'')}</div>
+          </article>`).join('')
+        : empty('Your journal is a blank page. Add an entry whenever you feel ready.')
+    )}
+  </div>`;
+}
+
 /* SETTINGS */
 
 function settings(){
@@ -470,6 +523,7 @@ function render(){
     wellness,
     habits,
     lists,
+    journal,
     settings
   };
 
@@ -485,7 +539,7 @@ function render(){
   if(moreButton){
     moreButton.classList.toggle(
       'active',
-      ['wellness','habits','lists','settings'].includes(page)
+      ['wellness','habits','lists','journal','settings'].includes(page)
     );
   }
 
@@ -549,6 +603,13 @@ const fields={
     ['title','Title','text',1],
     ['body','Your note','textarea']
   ],
+  journal:[
+    ['date','Entry date','date',1],
+    ['title','Title','text',1],
+    ['mood','How are you feeling?','select',['😊 Happy','😌 Calm','😐 Okay','😔 Sad','😣 Stressed','😴 Tired','🥰 Loved','😡 Frustrated','🌧️ Overwhelmed','🌱 Hopeful']],
+    ['prompt','Reflection prompt (optional)','select',['Just writing freely','What felt meaningful today?','What am I proud of?','What was difficult today?','What do I need tomorrow?','What am I grateful for?','What do I need to let go of?']],
+    ['body','Your journal entry','textarea',1]
+  ],
   task:[
     ['title','Task','text',1],
     ['date','Due date','date']
@@ -581,6 +642,7 @@ function showModal(type){
     med:'Medication & vitamins',
     habit:'Add a habit',
     note:'New note',
+    journal:'Write in your journal',
     task:'Add a task',
     shopping:'Shopping item',
     expense:'Log spending'
@@ -618,6 +680,7 @@ $('#modal-form').addEventListener('submit',e=>{
 
   if(modalType==='cycle')data.cycles.push(obj);
   else if(modalType==='note')data.notes.push({...obj,date:today()});
+  else if(modalType==='journal')data.journal.push(obj);
   else if(modalType==='task')data.tasks.push({...obj,done:false});
   else if(modalType==='shopping')data.shopping.push({...obj,done:false});
   else {
