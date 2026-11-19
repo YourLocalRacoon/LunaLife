@@ -82,5 +82,5 @@ async function cloudLoad(){if(!user||!db)return;const snap=await firebaseFns.get
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;$('#install-btn').hidden=false});
 $('#install-btn').addEventListener('click',async()=>{if(deferredInstall){deferredInstall.prompt();deferredInstall=null}});
 $('#account-btn').addEventListener('click',()=>{page='settings';render()});
-if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(console.warn));
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));
 render();setupFirebase();
