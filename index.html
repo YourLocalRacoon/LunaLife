@@ -29,12 +29,18 @@
         <button class="nav-item" data-page="lists">☷ <span>Lists & notes</span></button>
         <button class="nav-item" data-page="settings">⚙ <span>Settings & sync</span></button>
       </nav>
+      <div class="mobile-more-menu" id="mobile-more-menu" hidden aria-label="More LunaLife sections">
+  <button data-page="wellness">✿ <span>Wellness</span></button>
+  <button data-page="habits">✧ <span>Habits &amp; goals</span></button>
+  <button data-page="lists">☷ <span>Lists &amp; notes</span></button>
+  <button data-page="settings">⚙ <span>Settings &amp; sync</span></button>
+</div>
       <div class="sidebar-note"><span>✦</span><p>Small steps still move you across the universe.</p></div>
     </aside>
     <main id="main" tabindex="-1"></main>
   </div>
   <nav class="mobile-nav" id="mobile-nav">
-    <button class="active" data-page="home">✧<small>Today</small></button><button data-page="schedule">▦<small>Plan</small></button><button data-page="nutrition">♡<small>Food</small></button><button data-page="cycle">☾<small>Cycle</small></button><button data-page="wellness">✿<small>More</small></button>
+    <button class="active" data-page="home">✧<small>Today</small></button><button data-page="schedule">▦<small>Plan</small></button><button data-page="nutrition">♡<small>Food</small></button><button data-page="cycle">☾<small>Cycle</small></button><button id="mobile-more-button" data-more aria-controls="mobile-more-menu" aria-expanded="false">✦<small>More</small></button>
   </nav>
   <dialog id="modal"><form method="dialog" id="modal-form"><div class="modal-head"><h2 id="modal-title">Add entry</h2><button class="icon-btn" value="cancel" aria-label="Close">×</button></div><div id="modal-body"></div><div class="modal-actions"><button class="btn ghost" value="cancel">Cancel</button><button class="btn primary" id="modal-save" value="default">Save</button></div></form></dialog>
   <script type="module" src="./app.js"></script>
