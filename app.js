@@ -515,42 +515,55 @@ function authMarkup(){
 /* RENDER */
 
 function render(){
-  const pages={
-    home,
-    schedule,
-    nutrition,
-    cycle,
-    wellness,
-    habits,
-    lists,
-    journal,
-    settings
-  };
+  const main = $('#main');
 
-  $('#main').innerHTML=pages[page]();
+  try {
+    const pages = {
+      home,
+      schedule,
+      nutrition,
+      cycle,
+      wellness,
+      habits,
+      lists,
+      journal,
+      settings
+    };
 
-  // Update active states without treating More as a page.
-  document.querySelectorAll('#nav [data-page], #mobile-nav [data-page]').forEach(b=>{
-    b.classList.toggle('active',b.dataset.page===page);
-  });
+    if (!pages[page]) {
+      throw new Error('Unknown page: ' + page);
+    }
 
-  const moreButton=$('#mobile-more-button');
+    main.innerHTML = pages[page]();
 
-  if(moreButton){
-    moreButton.classList.toggle(
-      'active',
-      ['wellness','habits','lists','journal','settings'].includes(page)
-    );
+    document.querySelectorAll('#nav [data-page], #mobile-nav [data-page]').forEach(b => {
+      b.classList.toggle('active', b.dataset.page === page);
+    });
+
+    const moreButton = $('#mobile-more-button');
+    const menu = $('#mobile-more-menu');
+
+    if (moreButton) {
+      moreButton.classList.toggle(
+        'active',
+        ['wellness', 'habits', 'lists', 'journal', 'settings'].includes(page)
+      );
+      moreButton.setAttribute('aria-expanded', 'false');
+    }
+
+    if (menu) menu.hidden = true;
+
+  } catch (error) {
+    console.error('LunaLife render error:', error);
+
+    main.innerHTML = `
+      <section class="card" style="margin:20px;padding:20px">
+        <h2>Something went wrong</h2>
+        <p>LunaLife encountered an error while opening this page.</p>
+        <pre style="white-space:pre-wrap;overflow-wrap:anywhere;color:#ff9bba">${String(error.stack || error.message || error)}</pre>
+      </section>
+    `;
   }
-
-  // Close the menu after choosing a destination.
-  const menu=$('#mobile-more-menu');
-
-  if(menu){
-    menu.hidden=true;
-  }
-
-  moreButton?.setAttribute('aria-expanded','false');
 }
 
 /* ENTRY FORMS */
