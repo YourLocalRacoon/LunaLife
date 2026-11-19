@@ -1,4 +1,4 @@
-const CACHE='lunalife-v2';
+const CACHE='lunalife-v3';
 const BASE=new URL('./', self.location.href);
 const CORE=['index.html','styles.css','app.js','firebase-config.js','manifest.webmanifest','apple-touch-icon.png','icon-192.png','icon-512.png'].map(path=>new URL(path,BASE).toString());
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(CORE))));
