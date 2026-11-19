@@ -1,8 +1,8 @@
 
 
 
-const CACHE = 'lunalife-v6';
-const BASE = new URL('./', self.location.href);
+const CACHE = 'lunalife-v7';
+ const BASE = new URL('./', self.location.href);
 
 const CORE = [
   'index.html',
