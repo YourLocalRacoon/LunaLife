@@ -1,57 +1,971 @@
-function render(){
-  const main = $('#main');
 
+import { firebaseConfig } from './firebase-config.js';
+
+const $ = s => document.querySelector(s);
+const today = () => new Date().toISOString().slice(0,10);
+const pretty = d => new Date(d+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+const uid = () => crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+Math.random());
+
+const fresh = () => ({
+  events:[],
+  foods:[],
+  water:0,
+  cycles:[],
+  moods:[],
+  sleep:[],
+  exercise:[],
+  meds:[],
+  habits:[],
+  goals:[],
+  notes:[],
+  journal:[],
+  tasks:[],
+  shopping:[],
+  expenses:[],
+  settings:{
+    calorieGoal:2000,
+    waterGoal:8,
+    cycleLength:28,
+    periodLength:5
+  }
+});
+
+let data = (() => {
   try {
-    const pages = {
-      home,
-      schedule,
-      nutrition,
-      cycle,
-      wellness,
-      habits,
-      lists,
-      journal,
-      settings
-    };
+    return {...fresh(),...JSON.parse(localStorage.getItem('lunalife-data')||'{}')};
+  } catch {
+    return fresh();
+  }
+})();
 
-    if (!pages[page]) {
-      throw new Error('Unknown page: ' + page);
-    }
+let page='home';
+let deferredInstall=null;
+let auth=null;
+let db=null;
+let firebaseFns=null;
+let user=null;
 
-    main.innerHTML = pages[page]();
+function save(){
+  localStorage.setItem('lunalife-data',JSON.stringify(data));
+  render();
 
-    document.querySelectorAll(
-      '#nav [data-page], #mobile-nav [data-page]'
-    ).forEach(b => {
-      b.classList.toggle('active', b.dataset.page === page);
-    });
-
-    const moreButton = $('#mobile-more-button');
-
-    if (moreButton) {
-      moreButton.classList.toggle(
-        'active',
-        ['wellness','habits','lists','journal','settings'].includes(page)
-      );
-    }
-
-    const menu = $('#mobile-more-menu');
-
-    if (menu) menu.hidden = true;
-
-    moreButton?.setAttribute('aria-expanded', 'false');
-
-  } catch (error) {
-    console.error('LunaLife rendering error:', error);
-
-    main.innerHTML = `
-      <div class="card" style="margin:30px;padding:24px">
-        <h2>Something interrupted LunaLife ✨</h2>
-        <p>The planner could not load this page.</p>
-        <p><b>Error:</b></p>
-        <pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(error.message || String(error))}</pre>
-        <p>Please share this error so we can repair it.</p>
-      </div>
-    `;
+  if(user&&db){
+    cloudSave().catch(e=>syncLabel('Sync issue · saved here'));
   }
 }
+
+function syncLabel(t){
+  const el=$('#sync-status');
+  if(el) el.textContent='● '+t;
+}
+
+function esc(s=''){
+  return String(s).replace(/[&<>"']/g,c=>({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+
+function sum(arr,key){
+  return arr.filter(x=>x.date===today())
+    .reduce((n,x)=>n+(Number(x[key])||0),0);
+}
+
+function head(kicker,title,sub,action=''){
+  return `<div class="page-head">
+    <div>
+      <div class="eyebrow">${kicker}</div>
+      <h1>${title}</h1>
+      <p class="sub">${sub}</p>
+    </div>
+    ${action}
+  </div>`;
+}
+
+function card(title,body,extra=''){
+  return `<section class="card ${extra}">
+    <h2 class="section-title">${title}</h2>
+    ${body}
+  </section>`;
+}
+
+function empty(t='Nothing here yet. Add your first entry to get started.'){
+  return `<div class="empty">${t}</div>`;
+}
+
+function addBtn(type,label='＋ Add entry'){
+  return `<button class="btn primary" data-add="${type}">${label}</button>`;
+}
+
+function entry(icon,title,detail,meta=''){
+  return `<div class="entry">
+    <div class="entry-icon">${icon}</div>
+    <div class="entry-main">
+      <b>${esc(title)}</b>
+      <small>${esc(detail||'')}</small>
+    </div>
+    <div class="entry-meta">${esc(meta)}</div>
+  </div>`;
+}
+
+/* TODAY */
+
+function home(){
+  const cals=sum(data.foods,'calories');
+  const water=data.water||0;
+  const tasks=data.tasks.filter(x=>x.date===today()&&x.done).length;
+  const allTasks=data.tasks.filter(x=>x.date===today()).length;
+  const events=data.events.filter(x=>x.date===today()).sort((a,b)=>a.time.localeCompare(b.time));
+  const foods=data.foods.filter(x=>x.date===today());
+  const mood=data.moods.filter(x=>x.date===today()).at(-1);
+
+  return head(
+    'YOUR DAILY ORBIT',
+    'Hello, stargazer ✨',
+    `Today is ${pretty(today())}. Make space for what matters.`,
+    addBtn('event','＋ Plan something')
+  )+
+  `<div class="grid stats">
+    <div class="card">
+      <div class="stat-label">CALORIES LOGGED</div>
+      <div class="stat-value">${cals.toLocaleString()}</div>
+      <div class="stat-foot">of ${data.settings.calorieGoal.toLocaleString()} kcal goal</div>
+      <div class="progress"><span style="width:${Math.min(100,cals/data.settings.calorieGoal*100)}%"></span></div>
+    </div>
+    <div class="card">
+      <div class="stat-label">WATER TODAY</div>
+      <div class="stat-value">${water} <small style="font-size:13px">glasses</small></div>
+      <div class="stat-foot">${data.settings.waterGoal} glasses daily goal</div>
+      <div class="progress"><span style="width:${Math.min(100,water/data.settings.waterGoal*100)}%"></span></div>
+      <button class="btn ghost" data-action="water">＋ Add glass</button>
+    </div>
+    <div class="card">
+      <div class="stat-label">TODAY'S TASKS</div>
+      <div class="stat-value">${tasks}/${allTasks}</div>
+      <div class="stat-foot">Little steps count</div>
+      <div class="progress"><span style="width:${allTasks?tasks/allTasks*100:0}%"></span></div>
+    </div>
+    <div class="card">
+      <div class="stat-label">YOUR MOOD</div>
+      <div class="stat-value">${mood?esc(mood.mood):'—'}</div>
+      <div class="stat-foot">${mood?'Thanks for checking in':'Take a moment to check in'}</div>
+      <button class="btn ghost" data-add="mood">＋ Check in</button>
+    </div>
+  </div>
+  <div class="grid two-col">
+    ${card('Today’s schedule',
+      events.length
+        ? events.map(x=>`<div class="dayline">
+            <div class="daytime">${esc(x.time||'Anytime')}</div>
+            <div class="dayevent">
+              <b>${esc(x.title)}</b>
+              <small class="muted">${esc(x.category||'Personal')} ${x.notes?'· '+esc(x.notes):''}</small>
+            </div>
+          </div>`).join('')
+        : empty('Your day is open sky. Add an event when you need one.')
+    )}
+    <div class="grid" style="gap:16px">
+      ${card('Quick add',`<div class="quick-grid">
+        <button class="quick" data-add="food"><span>♡</span><small>Food</small></button>
+        <button class="quick" data-add="event"><span>▦</span><small>Event</small></button>
+        <button class="quick" data-add="mood"><span>☁</span><small>Mood</small></button>
+        <button class="quick" data-add="note"><span>✎</span><small>Note</small></button>
+      </div>`)}
+      ${card('A little reminder',`<div class="notice">
+        You do not have to do everything today. Choose one gentle next step.
+        Your worth is not measured by productivity, food numbers, or perfect routines. ✦
+      </div>`)}
+      ${card('Latest food log',
+        foods.length
+          ? foods.slice(-3).reverse().map(f=>entry('♡',f.name,f.meal,`${f.calories} kcal`)).join('')
+          : empty('Your food journal is waiting whenever you are.')
+      )}
+    </div>
+  </div>`;
+}
+
+/* SCHEDULE */
+
+function schedule(){
+  let ev=[...data.events].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+
+  return head(
+    'YOUR TIME, YOUR WAY',
+    'Schedule',
+    'A soft landing place for plans, appointments and everyday things.',
+    addBtn('event','＋ Add event')
+  )+
+  card('Upcoming plans',
+    ev.length
+      ? ev.map(x=>entry('▦',x.title,`${pretty(x.date)} · ${x.time||'Anytime'} · ${x.category||'Personal'}`,x.date===today()?'Today':'')).join('')
+      : empty()
+  );
+}
+
+/* NUTRITION */
+
+function nutrition(){
+  let foods=data.foods.filter(x=>x.date===today());
+  let cals=sum(data.foods,'calories');
+  let p=sum(data.foods,'protein');
+  let carb=sum(data.foods,'carbs');
+  let fat=sum(data.foods,'fat');
+
+  return head(
+    'NOURISH YOURSELF',
+    'Nutrition',
+    'A judgment-free food and hydration journal.',
+    addBtn('food','＋ Log food')
+  )+
+  `<div class="grid stats">
+    <div class="card"><div class="stat-label">ENERGY LOGGED</div><div class="stat-value">${cals}</div><div class="stat-foot">kcal · optional daily guide</div></div>
+    <div class="card"><div class="stat-label">PROTEIN</div><div class="stat-value">${p}g</div><div class="stat-foot">logged today</div></div>
+    <div class="card"><div class="stat-label">CARBS</div><div class="stat-value">${carb}g</div><div class="stat-foot">logged today</div></div>
+    <div class="card"><div class="stat-label">FAT</div><div class="stat-value">${fat}g</div><div class="stat-foot">logged today</div></div>
+  </div>
+  <div class="grid two-col">
+    ${card('Today’s food',
+      foods.length
+        ? foods.map(f=>entry('♡',f.name,`${f.meal} · ${f.time||''}`,f.calories?`${f.calories} kcal`:'Logged')).join('')
+        : empty()
+    )}
+    ${card('Hydration',`
+      <div class="stat-value">${data.water||0} / ${data.settings.waterGoal}</div>
+      <p class="muted">Glasses of water logged today</p>
+      <div class="progress"><span style="width:${Math.min(100,(data.water||0)/data.settings.waterGoal*100)}%"></span></div>
+      <button class="btn primary" data-action="water">＋ Add a glass</button>
+      <button class="btn ghost" data-action="water-reset">Reset today</button>
+    `)}
+  </div>
+  <p class="fine">Nutrition tracking is optional and informational. Calorie needs vary; this app does not prescribe a target or replace advice from a qualified health professional.</p>`;
+}
+
+/* CYCLE TRACKER */
+
+function cycle(){
+  let last=data.cycles.at(-1);
+  let start=last?.start||'';
+  let days=start?Math.floor((new Date(today())-new Date(start+'T12:00:00'))/86400000)+1:null;
+  let len=Number(data.settings.cycleLength)||28;
+  let next=last?new Date(new Date(start+'T12:00:00').getTime()+len*86400000).toISOString().slice(0,10):null;
+
+  let period=data.cycles.flatMap(c=>
+    Array.from({length:Number(c.length||data.settings.periodLength)},(_,i)=>
+      new Date(new Date(c.start+'T12:00:00').getTime()+i*86400000).toISOString().slice(0,10)
+    )
+  );
+
+  return head(
+    'YOUR BODY, YOUR RHYTHM',
+    'Cycle tracker',
+    'Notice patterns gently. Predictions are estimates, not medical certainty.',
+    addBtn('cycle','＋ Log period')
+  )+
+  `<div class="grid two-col">
+    <div class="card">
+      <h2 class="section-title">Your cycle snapshot</h2>
+      <div class="cycle-ring">
+        <div><strong>${days?`Day ${days}`:'—'}</strong><small>of your cycle</small></div>
+      </div>
+      <div class="grid three-col">
+        <div><div class="stat-label">LAST START</div><b>${last?last.start:'Not logged'}</b></div>
+        <div><div class="stat-label">NEXT ESTIMATE</div><b>${next||'—'}</b></div>
+        <div><div class="stat-label">CYCLE LENGTH</div><b>${len} days</b></div>
+      </div>
+    </div>
+    ${card('Cycle notes',
+      data.cycles.length
+        ? data.cycles.slice().reverse().map(c=>entry('☾',`Period started ${c.start}`,`${c.length||data.settings.periodLength} days logged`,c.flow||'')).join('')
+        : empty('Log a period start to begin your calendar.')
+    )}
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h2 class="section-title">Recent cycle dates</h2>
+    <div class="days">
+      ${['S','M','T','W','T','F','S'].map(d=>`<div class="day head">${d}</div>`).join('')}
+      ${Array.from({length:35},(_,i)=>{
+        let d=new Date();
+        d.setDate(1);
+        let offset=d.getDay();
+        let date=new Date(d.getFullYear(),d.getMonth(),i-offset+1);
+        let s=date.toISOString().slice(0,10);
+        return `<div class="day ${period.includes(s)?'period':''} ${s===today()?'today':''}">${date.getMonth()===d.getMonth()?date.getDate():''}</div>`;
+      }).join('')}
+    </div>
+    <p class="fine">Pink dates indicate logged period days. Cycle estimates can be inaccurate, especially when cycles vary. This tracker is not contraception or a diagnostic tool.</p>
+  </div>`;
+}
+
+/* WELLNESS */
+
+function wellness(){
+  let mood=data.moods.slice().reverse().slice(0,8);
+  let sleep=data.sleep.slice().reverse().slice(0,5);
+  let ex=data.exercise.slice().reverse().slice(0,5);
+  let med=data.meds.slice().reverse().slice(0,5);
+
+  return head(
+    'CHECK IN WITH YOU',
+    'Wellness',
+    'A place for mood, rest, movement and care.'
+  )+
+  `<div class="quick-grid" style="margin-bottom:16px">
+    <button class="quick" data-add="mood"><span>☁</span><small>Mood</small></button>
+    <button class="quick" data-add="sleep"><span>☾</span><small>Sleep</small></button>
+    <button class="quick" data-add="exercise"><span>✿</span><small>Movement</small></button>
+    <button class="quick" data-add="med"><span>✧</span><small>Medication</small></button>
+  </div>
+  <div class="grid two-col">
+    ${card('Mood journal',mood.length?mood.map(x=>entry('☁',x.mood,x.note,x.date)).join(''):empty())}
+    ${card('Sleep',sleep.length?sleep.map(x=>entry('☾',`${x.hours} hours`,x.note,x.date)).join(''):empty())}
+    ${card('Movement',ex.length?ex.map(x=>entry('✿',x.activity,`${x.minutes||0} minutes`,x.date)).join(''):empty())}
+    ${card('Medication & vitamins',med.length?med.map(x=>entry('✧',x.name,x.dose,x.date)).join(''):empty())}
+  </div>`;
+}
+
+/* HABITS AND GOALS */
+
+function habits(){
+  return head(
+    'GROW AT YOUR OWN PACE',
+    'Habits & goals',
+    'Celebrate consistency, not perfection.',
+    addBtn('habit','＋ Add habit')
+  )+
+  `<div class="grid two-col">
+    ${card('Your habits',
+      data.habits.length
+        ? data.habits.map(h=>`<div class="list-row">
+            <input type="checkbox" data-habit="${h.id}" ${h.done===today()?'checked':''}>
+            <div class="grow">
+              <b>${esc(h.name)}</b>
+              <div class="muted" style="font-size:10px">${esc(h.frequency||'Daily')}</div>
+            </div>
+            <span class="tag">${h.done===today()?'Done today':'In progress'}</span>
+          </div>`).join('')
+        : empty()
+    )}
+    ${card('Goals',
+      data.goals.length
+        ? data.goals.map(g=>entry('✦',g.name,g.target||'A goal worth growing toward',g.due||'')).join('')
+        : empty('Add a goal you are excited about.')
+    )}
+  </div>`;
+}
+
+/* LISTS AND NOTES */
+
+function lists(){
+  return head(
+    'THOUGHTS & LITTLE TASKS',
+    'Lists & notes',
+    'Keep the loose ends and bright ideas together.',
+    addBtn('note','＋ New note')
+  )+
+  `<div class="grid two-col">
+    ${card('To-do list',
+      data.tasks.length
+        ? data.tasks.map(t=>`<div class="list-row">
+            <input type="checkbox" data-task="${t.id}" ${t.done?'checked':''}>
+            <div class="grow">
+              <b style="${t.done?'text-decoration:line-through;opacity:.55':''}">${esc(t.title)}</b>
+              <div class="muted" style="font-size:10px">${esc(t.date||'No date')}</div>
+            </div>
+          </div>`).join('')
+        : empty()
+    )}
+    ${card('Notes',
+      data.notes.length
+        ? data.notes.slice().reverse().map(n=>entry('✎',n.title,n.body,n.date)).join('')
+        : empty()
+    )}
+    ${card('Shopping list',
+      data.shopping.length
+        ? data.shopping.map(x=>`<div class="list-row">
+            <input type="checkbox" data-shop="${x.id}" ${x.done?'checked':''}>
+            <div class="grow">${esc(x.name)}</div>
+          </div>`).join('')
+        : empty()
+    )}
+    ${card('Spending log',
+      data.expenses.length
+        ? data.expenses.slice().reverse().map(x=>entry('◇',x.name,x.category,x.amount?`$${x.amount}`:'')).join('')
+        : empty()
+    )}
+  </div>
+  <div style="margin-top:15px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn ghost" data-add="task">＋ Task</button>
+    <button class="btn ghost" data-add="shopping">＋ Shopping item</button>
+    <button class="btn ghost" data-add="expense">＋ Expense</button>
+  </div>`;
+}
+
+/* JOURNAL */
+
+function journal(){
+  const entries=[...(data.journal||[])].sort((a,b)=>
+    (b.date||'').localeCompare(a.date||'')
+  );
+
+  const prompts=[
+    'What felt meaningful today?',
+    'What is something I wish someone understood?',
+    'What am I proud of, even if it feels small?',
+    'What do I need more of tomorrow?',
+    'What am I ready to let go of?'
+  ];
+
+  return head(
+    'A SPACE JUST FOR YOU',
+    'Your journal ✎',
+    'A quiet place to untangle thoughts, notice feelings, and be yourself.',
+    addBtn('journal','＋ Write an entry')
+  )+
+  `<div class="grid two-col">
+    ${card('A gentle reflection',`
+      <div class="notice">
+        You don't have to make every entry meaningful or polished. You can write a sentence, a page, or simply how today felt. This space is yours. ✨
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label>A prompt if you need one</label>
+        <div class="muted">${prompts.map(p=>'<p>✦ '+esc(p)+'</p>').join('')}</div>
+      </div>
+      ${addBtn('journal','＋ Start writing')}
+    `)}
+    ${card('Your journal at a glance',`
+      <div class="stat-value">${entries.length}</div>
+      <div class="stat-foot">${entries.length===1?'entry':'entries'} saved in your journal</div>
+      <p class="muted" style="margin-top:12px">${entries.length?'Your thoughts are here whenever you want to revisit them.':'Your first entry is waiting whenever you're ready.'}</p>
+    `)}
+  </div>
+  <div style="margin-top:18px">
+    ${card('Past entries',
+      entries.length
+        ? entries.map(j=>`<article class="journal-entry" style="padding:14px 0;border-bottom:1px solid var(--line)">
+            <div class="eyebrow">${esc(j.date?pretty(j.date):'Undated entry')}</div>
+            <h3 style="margin:6px 0">${esc(j.title||'Untitled entry')}</h3>
+            <div class="muted" style="font-size:12px;margin-bottom:9px">${esc(j.mood||'Mood not added')}${j.prompt?' · '+esc(j.prompt):''}</div>
+            <div style="white-space:pre-wrap;line-height:1.65">${esc(j.body||'')}</div>
+          </article>`).join('')
+        : empty('Your journal is a blank page. Add an entry whenever you feel ready.')
+    )}
+  </div>`;
+}
+
+/* SETTINGS */
+
+function settings(){
+  return head(
+    'YOUR SPACE, YOUR SETTINGS',
+    'Settings & sync',
+    'Your data belongs to you. Export it or connect cloud sync.'
+  )+
+  `<div class="grid two-col">
+    <div class="card">
+      <h2 class="section-title">Account & cloud sync</h2>
+      <div id="auth-area">${authMarkup()}</div>
+      <div class="notice" style="margin-top:15px">
+        Cloud sync needs your own Firebase project and configuration.
+        Until then, LunaLife saves entries privately in this browser on this device.
+        Export a backup before changing devices.
+      </div>
+    </div>
+    <div class="card">
+      <h2 class="section-title">Daily preferences</h2>
+      <div class="field"><label>Calorie reference (kcal) — optional</label><input id="goal-cal" type="number" min="0" value="${data.settings.calorieGoal}"></div>
+      <div class="field"><label>Water goal (glasses)</label><input id="goal-water" type="number" min="1" value="${data.settings.waterGoal}"></div>
+      <div class="field"><label>Typical cycle length (days)</label><input id="cycle-len" type="number" min="15" max="60" value="${data.settings.cycleLength}"></div>
+      <div class="field"><label>Typical period length (days)</label><input id="period-len" type="number" min="1" max="15" value="${data.settings.periodLength}"></div>
+      <button class="btn primary" data-action="settings-save">Save preferences</button>
+    </div>
+    <div class="card">
+      <h2 class="section-title">Your data</h2>
+      <p class="muted">Download a JSON backup or restore a previous LunaLife backup.</p>
+      <button class="btn ghost" data-action="export">↓ Export my data</button>
+      <div class="field"><label>Restore from backup</label><input id="import-file" type="file" accept="application/json"></div>
+      <button class="btn ghost" data-action="import">Restore backup</button>
+    </div>
+    <div class="card">
+      <h2 class="section-title">Privacy note</h2>
+      <p class="muted">Cycle, mood, medication and nutrition entries can be sensitive. Use a device passcode, keep your account credentials private, and only enable cloud sync on a Firebase project you control. Avoid entering information you do not want stored.</p>
+      <p class="fine">LunaLife is a personal organizer, not a medical device. It does not diagnose, treat, or provide medical advice.</p>
+    </div>
+  </div>`;
+}
+
+function authMarkup(){
+  return user
+    ? `<p>Signed in as <b>${esc(user.email||user.displayName||'Google account')}</b></p>
+       <button class="btn ghost" data-action="signout">Sign out</button>
+       <p class="fine">Cloud sync is enabled for this account.</p>`
+    : `<p class="muted">Sign in with email/password or Google to sync across your devices.</p>
+       <div class="field"><label>Email</label><input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com"></div>
+       <div class="field"><label>Password</label><input id="auth-password" type="password" autocomplete="current-password" placeholder="At least 6 characters"></div>
+       <div style="display:flex;gap:8px;flex-wrap:wrap">
+         <button class="btn primary" data-action="signup">Create account</button>
+         <button class="btn ghost" data-action="signin">Sign in</button>
+         <button class="btn ghost" data-action="google">Google</button>
+       </div>
+       <p class="fine" id="auth-message">Cloud sync is not configured yet. Add Firebase settings to enable sign-in.</p>`;
+}
+
+/* RENDER */
+
+function render(){
+  const pages={
+    home,
+    schedule,
+    nutrition,
+    cycle,
+    wellness,
+    habits,
+    lists,
+    journal,
+    settings
+  };
+
+  $('#main').innerHTML=pages[page]();
+
+  // Update active states without treating More as a page.
+  document.querySelectorAll('#nav [data-page], #mobile-nav [data-page]').forEach(b=>{
+    b.classList.toggle('active',b.dataset.page===page);
+  });
+
+  const moreButton=$('#mobile-more-button');
+
+  if(moreButton){
+    moreButton.classList.toggle(
+      'active',
+      ['wellness','habits','lists','journal','settings'].includes(page)
+    );
+  }
+
+  // Close the menu after choosing a destination.
+  const menu=$('#mobile-more-menu');
+
+  if(menu){
+    menu.hidden=true;
+  }
+
+  moreButton?.setAttribute('aria-expanded','false');
+}
+
+/* ENTRY FORMS */
+
+const fields={
+  event:[
+    ['title','Event name','text',1],
+    ['date','Date','date',1],
+    ['time','Time','time'],
+    ['category','Category','select',['Personal','Work','School','Appointment','Family','Other']],
+    ['notes','Notes','textarea']
+  ],
+  food:[
+    ['name','Food or drink','text',1],
+    ['meal','Meal','select',['Breakfast','Lunch','Dinner','Snack','Drink']],
+    ['calories','Calories (optional)','number'],
+    ['protein','Protein grams','number'],
+    ['carbs','Carbs grams','number'],
+    ['fat','Fat grams','number'],
+    ['time','Time','time']
+  ],
+  cycle:[
+    ['start','Period start date','date',1],
+    ['length','Period length (days)','number'],
+    ['flow','Flow','select',['Light','Medium','Heavy','Spotting']],
+    ['symptoms','Symptoms','text']
+  ],
+  mood:[
+    ['mood','How are you feeling?','select',['😊 Happy','😌 Calm','😐 Okay','😔 Sad','😣 Stressed','😴 Tired','🥰 Loved','😡 Frustrated']],
+    ['note','Anything you want to note?','textarea']
+  ],
+  sleep:[
+    ['hours','Hours slept','number',1],
+    ['note','Sleep notes','textarea']
+  ],
+  exercise:[
+    ['activity','Movement / activity','text',1],
+    ['minutes','Minutes','number'],
+    ['note','Notes','text']
+  ],
+  med:[
+    ['name','Medication or vitamin','text',1],
+    ['dose','Dose / note','text']
+  ],
+  habit:[
+    ['name','Habit name','text',1],
+    ['frequency','Frequency','select',['Daily','Weekdays','Weekly','Custom']]
+  ],
+  note:[
+    ['title','Title','text',1],
+    ['body','Your note','textarea']
+  ],
+  journal:[
+    ['date','Entry date','date',1],
+    ['title','Title','text',1],
+    ['mood','How are you feeling?','select',['😊 Happy','😌 Calm','😐 Okay','😔 Sad','😣 Stressed','😴 Tired','🥰 Loved','😡 Frustrated','🌧️ Overwhelmed','🌱 Hopeful']],
+    ['prompt','Reflection prompt (optional)','select',['Just writing freely','What felt meaningful today?','What am I proud of?','What was difficult today?','What do I need tomorrow?','What am I grateful for?','What do I need to let go of?']],
+    ['body','Your journal entry','textarea',1]
+  ],
+  task:[
+    ['title','Task','text',1],
+    ['date','Due date','date']
+  ],
+  shopping:[
+    ['name','Shopping item','text',1]
+  ],
+  expense:[
+    ['name','What was it?','text',1],
+    ['amount','Amount ($)','number'],
+    ['category','Category','select',['Food','Bills','Shopping','Transport','Health','Other']]
+  ]
+};
+
+let modalType='';
+
+function showModal(type){
+  modalType=type;
+  let fs=fields[type];
+
+  if(!fs)return;
+
+  $('#modal-title').textContent=({
+    event:'Plan an event',
+    food:'Log food',
+    cycle:'Log period',
+    mood:'Mood check-in',
+    sleep:'Log sleep',
+    exercise:'Log movement',
+    med:'Medication & vitamins',
+    habit:'Add a habit',
+    note:'New note',
+    journal:'Write in your journal',
+    task:'Add a task',
+    shopping:'Shopping item',
+    expense:'Log spending'
+  })[type]||'Add entry';
+
+  $('#modal-body').innerHTML=fs.map(([key,label,kind,opts])=>{
+    let html=kind==='select'
+      ? `<select name="${key}">${opts.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`
+      : kind==='textarea'
+        ? `<textarea name="${key}" placeholder="${esc(label)}"></textarea>`
+        : `<input name="${key}" type="${kind}" ${opts===1?'required':''} ${kind==='date'&&key==='date'?'value="'+today()+'"':''} ${kind==='date'&&key==='start'?'value="'+today()+'"':''}>`;
+
+    return `<div class="field"><label>${esc(label)}</label>${html}</div>`;
+  }).join('');
+
+  $('#modal').showModal();
+}
+
+$('#modal-form').addEventListener('submit',e=>{
+  if(e.submitter?.value==='cancel')return;
+
+  e.preventDefault();
+
+  let obj=Object.fromEntries(new FormData(e.currentTarget).entries());
+
+  if(!obj.date)obj.date=today();
+  if(!obj.time&&modalType==='event')obj.time='';
+  if(modalType==='cycle'&&!obj.length)obj.length=data.settings.periodLength;
+
+  ['calories','protein','carbs','fat','length','minutes','hours','amount'].forEach(k=>{
+    if(obj[k]!==undefined)obj[k]=Number(obj[k])||0;
+  });
+
+  obj.id=uid();
+
+  if(modalType==='cycle')data.cycles.push(obj);
+  else if(modalType==='note')data.notes.push({...obj,date:today()});
+  else if(modalType==='journal')data.journal.push(obj);
+  else if(modalType==='task')data.tasks.push({...obj,done:false});
+  else if(modalType==='shopping')data.shopping.push({...obj,done:false});
+  else {
+    const destination={
+      event:'events',
+      food:'foods',
+      mood:'moods',
+      sleep:'sleep',
+      exercise:'exercise',
+      med:'meds',
+      habit:'habits',
+      expense:'expenses'
+    }[modalType];
+
+    if(destination)data[destination].push(obj);
+  }
+
+  $('#modal').close();
+  save();
+});
+
+/* MOBILE NAVIGATION AND MORE MENU */
+
+document.addEventListener('click',e=>{
+  const moreButton=e.target.closest('#mobile-more-button');
+  const menu=$('#mobile-more-menu');
+
+  // The More button only opens or closes the menu.
+  // It never navigates directly to the Wellness page.
+  if(moreButton){
+    e.preventDefault();
+    e.stopPropagation();
+
+    if(menu){
+      const shouldOpen=menu.hidden;
+      menu.hidden=!shouldOpen;
+      moreButton.setAttribute('aria-expanded',String(shouldOpen));
+    }
+
+    return;
+  }
+
+  // Handle a destination selected from the More menu.
+  const menuItem=e.target.closest('#mobile-more-menu button[data-page]');
+
+  if(menuItem){
+    e.preventDefault();
+
+    if(menu)menu.hidden=true;
+
+    $('#mobile-more-button')?.setAttribute('aria-expanded','false');
+
+    page=menuItem.dataset.page;
+    render();
+
+    return;
+  }
+
+  // Handle the regular desktop and mobile navigation buttons.
+  const nav=e.target.closest('#nav button[data-page], #mobile-nav button[data-page]');
+
+  if(nav){
+    e.preventDefault();
+
+    if(menu)menu.hidden=true;
+
+    $('#mobile-more-button')?.setAttribute('aria-expanded','false');
+
+    page=nav.dataset.page;
+    render();
+
+    return;
+  }
+
+  // Close the menu if the user taps somewhere outside it.
+  if(menu&&!menu.hidden&&!e.target.closest('#mobile-more-menu')){
+    menu.hidden=true;
+    $('#mobile-more-button')?.setAttribute('aria-expanded','false');
+  }
+
+  const add=e.target.closest('[data-add]');
+
+  if(add){
+    showModal(add.dataset.add);
+    return;
+  }
+
+  const act=e.target.closest('[data-action]')?.dataset.action;
+
+  if(act)action(act);
+});
+
+/* CHECKBOXES */
+
+document.addEventListener('change',e=>{
+  if(e.target.dataset.habit){
+    let h=data.habits.find(x=>x.id===e.target.dataset.habit);
+    if(h)h.done=e.target.checked?today():'';
+    save();
+  }
+
+  if(e.target.dataset.task){
+    let t=data.tasks.find(x=>x.id===e.target.dataset.task);
+    if(t)t.done=e.target.checked;
+    save();
+  }
+
+  if(e.target.dataset.shop){
+    let s=data.shopping.find(x=>x.id===e.target.dataset.shop);
+    if(s)s.done=e.target.checked;
+    save();
+  }
+});
+
+/* ACTIONS */
+
+function action(a){
+  if(a==='water'){
+    data.water=(data.water||0)+1;
+    save();
+  }
+
+  if(a==='water-reset'){
+    data.water=0;
+    save();
+  }
+
+  if(a==='settings-save'){
+    data.settings.calorieGoal=Number($('#goal-cal').value)||2000;
+    data.settings.waterGoal=Number($('#goal-water').value)||8;
+    data.settings.cycleLength=Number($('#cycle-len').value)||28;
+    data.settings.periodLength=Number($('#period-len').value)||5;
+    save();
+  }
+
+  if(a==='export'){
+    let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    let url=URL.createObjectURL(blob);
+    let el=document.createElement('a');
+    el.href=url;
+    el.download='lunalife-backup-'+today()+'.json';
+    el.click();
+    URL.revokeObjectURL(url);
+  }
+
+  if(a==='import'){
+    let f=$('#import-file').files[0];
+
+    if(!f)return alert('Choose a LunaLife JSON backup first.');
+
+    let r=new FileReader();
+
+    r.onload=()=>{
+      try{
+        data={...fresh(),...JSON.parse(r.result)};
+        save();
+        alert('Backup restored.');
+      }catch{
+        alert('That file could not be read as a LunaLife backup.');
+      }
+    };
+
+    r.readAsText(f);
+  }
+
+  if(a==='signup'||a==='signin'||a==='google'){
+    authAction(a);
+  }
+
+  if(a==='signout'){
+    firebaseFns.signOut(auth).then(()=>{
+      user=null;
+      syncLabel('On this device');
+      render();
+    });
+  }
+}
+
+/* FIREBASE */
+
+async function setupFirebase(){
+  if(!firebaseConfig.configured)return;
+
+  try{
+    const appmod=await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js');
+    const au=await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js');
+    const fs=await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js');
+
+    firebaseFns={...au,...fs};
+
+    const app=appmod.initializeApp(firebaseConfig);
+    auth=au.getAuth(app);
+    db=fs.getFirestore(app);
+
+    au.onAuthStateChanged(auth,async u=>{
+      user=u;
+
+      if(u){
+        syncLabel('Connecting…');
+        await cloudLoad();
+        syncLabel('Synced');
+      }else{
+        syncLabel('On this device');
+      }
+
+      render();
+    });
+  }catch(e){
+    console.error(e);
+    syncLabel('Sync setup needed');
+  }
+}
+
+async function authAction(a){
+  if(!firebaseFns||!auth){
+    $('#auth-message').textContent='Cloud sync is not configured. Follow the Firebase setup guide in README.md.';
+    return;
+  }
+
+  try{
+    let email=$('#auth-email').value;
+    let password=$('#auth-password').value;
+
+    if(a==='signup')await firebaseFns.createUserWithEmailAndPassword(auth,email,password);
+    if(a==='signin')await firebaseFns.signInWithEmailAndPassword(auth,email,password);
+    if(a==='google')await firebaseFns.signInWithPopup(auth,new firebaseFns.GoogleAuthProvider());
+  }catch(e){
+    $('#auth-message').textContent=e.message;
+  }
+}
+
+async function cloudSave(){
+  if(!user||!db)return;
+
+  await firebaseFns.setDoc(
+    firebaseFns.doc(db,'users',user.uid,'private','lunalife'),
+    {data,updatedAt:Date.now()}
+  );
+}
+
+async function cloudLoad(){
+  if(!user||!db)return;
+
+  const snap=await firebaseFns.getDoc(
+    firebaseFns.doc(db,'users',user.uid,'private','lunalife')
+  );
+
+  if(snap.exists()){
+    const remote=snap.data().data||{};
+    data={...fresh(),...remote};
+    localStorage.setItem('lunalife-data',JSON.stringify(data));
+  }
+}
+
+/* INSTALL APP */
+
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();
+  deferredInstall=e;
+  $('#install-btn').hidden=false;
+});
+
+$('#install-btn').addEventListener('click',async()=>{
+  if(deferredInstall){
+    deferredInstall.prompt();
+    deferredInstall=null;
+  }
+});
+
+/* ACCOUNT BUTTON */
+
+$('#account-btn').addEventListener('click',()=>{
+  page='settings';
+  render();
+});
+
+/* SERVICE WORKER */
+
+if('serviceWorker'in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('./sw.js').catch(console.warn);
+  });
+}
+
+/* START APP */
+
+render();
+setupFirebase();
