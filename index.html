@@ -1,4 +1,5 @@
 
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -16,8 +17,15 @@
 <div class="stars"></div>
 
 <header class="topbar">
-<button class="brand" data-page="home" aria-label="LunaLife home"><span class="brand-moon">☾</span><span><b>LunaLife</b><small>YOUR LIFE, IN THE STARS</small></span></button>
-<div class="top-actions"><span id="sync-status" class="sync-pill">● On this device</span><button class="icon-btn" id="install-btn" hidden>＋ Install</button><button class="avatar" id="account-btn" title="Account">✦</button></div>
+<button class="brand" data-page="home" aria-label="LunaLife home">
+<span class="brand-moon">☾</span>
+<span><b>LunaLife</b><small>YOUR LIFE, IN THE STARS</small></span>
+</button>
+<div class="top-actions">
+<span id="sync-status" class="sync-pill">● On this device</span>
+<button class="icon-btn" id="install-btn" hidden>＋ Install</button>
+<button class="avatar" id="account-btn" title="Account">✦</button>
+</div>
 </header>
 
 <div class="app-shell">
@@ -34,13 +42,15 @@
 <button class="nav-item" data-page="journal">✎ <span>Journal</span></button>
 <button class="nav-item" data-page="settings">⚙ <span>Settings &amp; sync</span></button>
 </nav>
-<div class="sidebar-note"><span>✦</span><p>Small steps still move you across the universe.</p></div>
+<div class="sidebar-note">
+<span>✦</span>
+<p>Small steps still move you across the universe.</p>
+</div>
 </aside>
 
 <main id="main" tabindex="-1"></main>
 </div>
 
-<!-- Mobile More menu: outside the desktop sidebar -->
 <div class="mobile-more-menu" id="mobile-more-menu" hidden aria-label="More LunaLife sections">
 <button data-page="wellness">✿ <span>Wellness</span></button>
 <button data-page="habits">✧ <span>Habits &amp; goals</span></button>
@@ -59,12 +69,50 @@
 
 <dialog id="modal">
 <form method="dialog" id="modal-form">
-<div class="modal-head"><h2 id="modal-title">Add entry</h2><button class="icon-btn" value="cancel" aria-label="Close">×</button></div>
+<div class="modal-head">
+<h2 id="modal-title">Add entry</h2>
+<button class="icon-btn" value="cancel" aria-label="Close">×</button>
+</div>
 <div id="modal-body"></div>
-<div class="modal-actions"><button class="btn ghost" value="cancel">Cancel</button><button class="btn primary" id="modal-save" value="default">Save</button></div>
+<div class="modal-actions">
+<button class="btn ghost" value="cancel">Cancel</button>
+<button class="btn primary" id="modal-save" value="default">Save</button>
+</div>
 </form>
 </dialog>
 
+<!-- LunaLife startup error detector -->
+<script>
+(function(){
+  function showError(message){
+    const main = document.getElementById('main');
+    if(!main) return;
+
+    main.innerHTML = '';
+
+    const box = document.createElement('div');
+    box.style.cssText =
+      'margin:20px;padding:20px;background:#2b153d;color:white;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere';
+
+    box.textContent = 'LUNALIFE STARTUP ERROR\n\n' + message;
+    main.appendChild(box);
+  }
+
+  window.addEventListener('error', function(e){
+    showError(e.message || 'A script failed to load. ' + (e.filename || ''));
+  });
+
+  window.addEventListener('unhandledrejection', function(e){
+    showError(
+      e.reason?.stack ||
+      e.reason?.message ||
+      String(e.reason)
+    );
+  });
+})();
+</script>
+
 <script type="module" src="./app.js"></script>
+
 </body>
 </html>
