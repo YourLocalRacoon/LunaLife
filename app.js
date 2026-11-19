@@ -438,7 +438,7 @@ function journal(){
     ${card('Your journal at a glance',`
       <div class="stat-value">${entries.length}</div>
       <div class="stat-foot">${entries.length===1?'entry':'entries'} saved in your journal</div>
-      <p class="muted" style="margin-top:12px">${entries.length?'Your thoughts are here whenever you want to revisit them.':'Your first entry is waiting whenever you're ready.'}</p>
+      <p class="muted" style="margin-top:12px">${entries.length?'Your thoughts are here whenever you want to revisit them.':'Your first entry is waiting whenever you are ready.'}</p>
     `)}
   </div>
   <div style="margin-top:18px">
