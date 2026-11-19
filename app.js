@@ -1,4 +1,5 @@
 
+
 import { firebaseConfig } from './firebase-config.js';
 
 const $ = s => document.querySelector(s);
@@ -406,7 +407,10 @@ function lists(){
 /* JOURNAL */
 
 function journal(){
-  const entries=[...(data.journal||[])].sort((a,b)=>
+  // Make sure journal data is always a usable list.
+  if(!Array.isArray(data.journal))data.journal=[];
+
+  const entries=[...data.journal].sort((a,b)=>
     (b.date||'').localeCompare(a.date||'')
   );
 
@@ -680,7 +684,10 @@ $('#modal-form').addEventListener('submit',e=>{
 
   if(modalType==='cycle')data.cycles.push(obj);
   else if(modalType==='note')data.notes.push({...obj,date:today()});
-  else if(modalType==='journal')data.journal.push(obj);
+  else if(modalType==='journal'){
+    if(!Array.isArray(data.journal))data.journal=[];
+    data.journal.push(obj);
+  }
   else if(modalType==='task')data.tasks.push({...obj,done:false});
   else if(modalType==='shopping')data.shopping.push({...obj,done:false});
   else {
